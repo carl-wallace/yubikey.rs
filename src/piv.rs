@@ -44,7 +44,7 @@
 
 use crate::{
     apdu::{Ins, StatusWords},
-    certificate::{self, Certificate, PublicKeyInfo},
+    certificate::{self},
     consts::CB_OBJ_MAX,
     error::{Error, Result},
     policy::{PinPolicy, TouchPolicy},
@@ -53,10 +53,7 @@ use crate::{
     yubikey::YubiKey,
     Buffer, ObjectId,
 };
-use elliptic_curve::sec1::EncodedPoint as EcPublicKey;
 use log::{debug, error, warn};
-use p256::NistP256;
-use p384::NistP384;
 use rsa::{BigUint, RsaPublicKey};
 use std::{
     fmt::{Display, Formatter},
@@ -72,6 +69,14 @@ use {
 
 #[cfg(feature = "untested")]
 use zeroize::Zeroizing;
+
+use der::asn1::BitString;
+use der::oid::db::rfc5912::{ID_EC_PUBLIC_KEY, RSA_ENCRYPTION, SECP_256_R_1};
+use der::{Any, Decode, Tag};
+use rsa::pkcs1::EncodeRsaPublicKey;
+use spki::AlgorithmIdentifierOwned;
+use spki::SubjectPublicKeyInfoOwned;
+use x509_cert::Certificate;
 
 /// PIV Applet Name
 pub(crate) const APPLET_NAME: &str = "PIV";
@@ -565,7 +570,13 @@ impl Key {
             };
 
             if !buf.is_empty() {
-                let cert = Certificate::from_bytes(buf)?;
+                let cert = match Certificate::from_der(buf.as_slice()) {
+                    Ok(cert) => cert,
+                    Err(e) => {
+                        debug!("error parsing certificate in slot {:?}: {}", slot, e);
+                        return Err(Error::ParseError);
+                    }
+                };
                 keys.push(Key { slot, cert });
             }
         }
@@ -591,7 +602,7 @@ pub fn generate(
     algorithm: AlgorithmId,
     pin_policy: PinPolicy,
     touch_policy: TouchPolicy,
-) -> Result<PublicKeyInfo> {
+) -> Result<SubjectPublicKeyInfoOwned> {
     // Keygen messages
     // TODO(tarcieri): extract these into an I18N-handling type?
     const SZ_SETTING_ROCA: &str = "Enable_Unsafe_Keygen_ROCA";
@@ -695,7 +706,6 @@ pub fn generate(
             }
         }
     }
-
     let value = response.data();
     read_public_key(algorithm, value, true)
 }
@@ -955,7 +965,7 @@ pub struct SlotMetadata {
     /// Imported or generated key
     pub origin: Option<Origin>,
     /// Pub key of the key
-    pub public: Option<PublicKeyInfo>,
+    pub public: Option<SubjectPublicKeyInfoOwned>,
     /// Whether PIN PUK and management key are default
     pub default: Option<bool>,
     /// Number of retries left
@@ -1110,7 +1120,7 @@ fn read_public_key(
     algorithm: AlgorithmId,
     input: &[u8],
     skip_asn1_tag: bool,
-) -> Result<PublicKeyInfo> {
+) -> Result<SubjectPublicKeyInfoOwned> {
     // TODO(str4d): Response is wrapped in an ASN.1 TLV:
     //
     //    0x7f 0x49 -> Application | Constructed | 0x49
@@ -1159,13 +1169,32 @@ fn read_public_key(
             }
             let exp = exp_tlv.value.to_vec();
 
-            Ok(PublicKeyInfo::Rsa {
-                algorithm,
-                pubkey: RsaPublicKey::new(
-                    BigUint::from_bytes_be(&modulus),
-                    BigUint::from_bytes_be(&exp),
-                )
-                .map_err(|_| Error::InvalidObject)?,
+            let rsa = match RsaPublicKey::new(
+                BigUint::from_bytes_be(&modulus),
+                BigUint::from_bytes_be(&exp),
+            ) {
+                Ok(rsa) => rsa,
+                Err(_e) => {
+                    error!("Failed to prepare public key structure");
+                    return Err(Error::ParseError);
+                }
+            };
+
+            let p1 = match rsa.to_pkcs1_der() {
+                Ok(p1) => p1,
+                Err(_e) => {
+                    error!("Failed to encode public key structure");
+                    return Err(Error::ParseError);
+                }
+            };
+
+            let algorithm_id = AlgorithmIdentifierOwned {
+                oid: RSA_ENCRYPTION,
+                parameters: Some(Any::new(der::Tag::Null, vec![]).unwrap()),
+            };
+            Ok(SubjectPublicKeyInfoOwned {
+                algorithm: algorithm_id,
+                subject_public_key: BitString::new(0, p1.to_vec()).unwrap(),
             })
         }
         AlgorithmId::EccP256 | AlgorithmId::EccP384 => {
@@ -1196,14 +1225,31 @@ fn read_public_key(
 
             match algorithm {
                 AlgorithmId::EccP256 => {
-                    EcPublicKey::<NistP256>::from_bytes(point).map(PublicKeyInfo::EcP256)
+                    let parameters =
+                        Any::new(Tag::ObjectIdentifier, SECP_256_R_1.as_bytes()).unwrap();
+                    let algorithm_id = AlgorithmIdentifierOwned {
+                        oid: ID_EC_PUBLIC_KEY,
+                        parameters: Some(parameters),
+                    };
+                    Ok(SubjectPublicKeyInfoOwned {
+                        algorithm: algorithm_id,
+                        subject_public_key: BitString::new(0, point.as_slice()).unwrap(),
+                    })
                 }
                 AlgorithmId::EccP384 => {
-                    EcPublicKey::<NistP384>::from_bytes(point).map(PublicKeyInfo::EcP384)
+                    let parameters =
+                        Any::new(Tag::ObjectIdentifier, SECP_256_R_1.as_bytes()).unwrap();
+                    let algorithm_id = AlgorithmIdentifierOwned {
+                        oid: ID_EC_PUBLIC_KEY,
+                        parameters: Some(parameters),
+                    };
+                    Ok(SubjectPublicKeyInfoOwned {
+                        algorithm: algorithm_id,
+                        subject_public_key: BitString::new(0, point.as_slice()).unwrap(),
+                    })
                 }
-                _ => return Err(Error::AlgorithmError),
+                _ => Err(Error::AlgorithmError),
             }
-            .map_err(|_| Error::InvalidObject)
         }
     }
 }

@@ -20,9 +20,6 @@ rust-version = "1.65"
 members = [".", "cli"]
 
 [dependencies]
-chrono = "0.4.23"
-cookie-factory = "0.3"
-der-parser = "8"
 des = "0.8"
 elliptic-curve = "0.13"
 hex = { package = "base16ct", version = "0.2", features = ["alloc"] }
@@ -43,9 +40,12 @@ sha1 = { version = "0.10", features = ["oid"] }
 sha2 = { version = "0.10", features = ["oid"] }
 subtle = "2"
 uuid = { version = "1.2", features = ["v4"] }
-x509 = "0.2"
-x509-parser = "0.14"
 zeroize = "1"
+
+der = "0.7.6"
+x509-cert = {version = "0.2.3", features = ["builder", "pem"]}
+spki = "0.7.2"
+signature = { version = "2.1.0", features = ["rand_core"] }
 
 [dev-dependencies]
 env_logger = "0.10"

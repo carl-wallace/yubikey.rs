@@ -57,10 +57,10 @@ mod serialization;
 mod setting;
 mod transaction;
 mod yubikey;
+mod yubikey_signer;
 
 pub use crate::{
     cccid::{CardId, CccId},
-    certificate::Certificate,
     chuid::ChuId,
     config::Config,
     error::{Error, Result},
@@ -70,6 +70,7 @@ pub use crate::{
     reader::Context,
     setting::{Setting, SettingSource},
     yubikey::{CachedPin, Serial, Version, YubiKey},
+    yubikey_signer::{YubiKeySigningKey, YubiKeyVerifyingKey},
 };
 
 #[cfg(feature = "untested")]

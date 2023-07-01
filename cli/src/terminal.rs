@@ -1,5 +1,6 @@
 //! Status messages
 
+use der::Decode;
 use log::debug;
 use once_cell::sync::Lazy;
 use sha2::{Digest, Sha256};
@@ -9,8 +10,8 @@ use std::{
     sync::Mutex,
 };
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, StandardStreamLock, WriteColor};
-use x509_parser::parse_x509_certificate;
-use yubikey::{certificate::Certificate, piv::*, YubiKey};
+use x509_cert::Certificate;
+use yubikey::{certificate::read, piv::*, YubiKey};
 
 /// Print a success status message (in green if colors are enabled)
 #[macro_export]
@@ -173,51 +174,43 @@ pub fn print_cert_info(
     slot: SlotId,
     stream: &mut StandardStreamLock<'_>,
 ) -> io::Result<()> {
-    let cert = match Certificate::read(yubikey, slot) {
+    let buf = match read(yubikey, slot) {
         Ok(c) => c,
         Err(e) => {
             debug!("error reading certificate in slot {:?}: {}", slot, e);
             return Ok(());
         }
     };
-    let buf = cert.into_buffer();
 
     if !buf.is_empty() {
         let fingerprint = Sha256::digest(&buf);
         let slot_id: u8 = slot.into();
         print_cert_attr(stream, "Slot", format!("{:x}", slot_id))?;
-        match parse_x509_certificate(&buf) {
-            Ok((_rem, cert)) => {
+        let cert = Certificate::from_der(buf.as_slice());
+        match cert {
+            Ok(cert) => {
                 print_cert_attr(
                     stream,
                     "Algorithm",
-                    cert.tbs_certificate.subject_pki.algorithm.algorithm,
+                    cert.tbs_certificate.subject_public_key_info.algorithm.oid,
                 )?;
 
-                print_cert_attr(stream, "Subject", cert.tbs_certificate.subject)?;
-                print_cert_attr(stream, "Issuer", cert.tbs_certificate.issuer)?;
+                print_cert_attr(stream, "Subject", cert.tbs_certificate.subject.to_string())?;
+                print_cert_attr(stream, "Issuer", cert.tbs_certificate.issuer.to_string())?;
                 print_cert_attr(
                     stream,
                     "Fingerprint",
-                    &hex::upper::encode_string(&fingerprint),
+                    hex::upper::encode_string(fingerprint.as_slice()),
                 )?;
                 print_cert_attr(
                     stream,
                     "Not Before",
-                    cert.tbs_certificate
-                        .validity
-                        .not_before
-                        .to_rfc2822()
-                        .unwrap(),
+                    cert.tbs_certificate.validity.not_before.to_string(),
                 )?;
                 print_cert_attr(
                     stream,
                     "Not After",
-                    cert.tbs_certificate
-                        .validity
-                        .not_after
-                        .to_rfc2822()
-                        .unwrap(),
+                    cert.tbs_certificate.validity.not_after.to_string(),
                 )?;
             }
             _ => {
