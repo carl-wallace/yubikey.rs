@@ -154,11 +154,15 @@ where
     let spkibuf = vk.to_public_key_der().unwrap();
     let spki = SubjectPublicKeyInfoOwned::from_der(spkibuf.as_bytes()).unwrap();
 
-    let builder = CertificateBuilder::new(profile, serial_number, validity, subject, spki, &signer)
-        .expect("Create certificate");
+    let builder =
+        CertificateBuilder::new(profile, serial_number, validity, subject, spki, &signer)
+            .expect("Create certificate");
 
     match builder.build() {
-        Ok(c) => Ok(c),
+        Ok(c) => {
+            let _ = signer.write_cert(c.to_der().unwrap().as_slice());
+            Ok(c)
+        }
         Err(_e) => Err(Error::InvalidObject),
     }
 }
