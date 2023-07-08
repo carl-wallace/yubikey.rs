@@ -22,20 +22,6 @@ use std::sync::{Arc, Mutex};
 
 use crate::piv::{sign_data, AlgorithmId, SlotId};
 use crate::YubiKey;
-#[cfg(feature = "untested")]
-use {
-    crate::{
-        apdu::StatusWords,
-        consts::{TAG_ADMIN_FLAGS_1, TAG_ADMIN_TIMESTAMP},
-        metadata::AdminData,
-        mgm,
-        transaction::ChangeRefAction,
-        Buffer, ObjectId,
-    },
-    secrecy::ExposeSecret,
-    std::time::{SystemTime, UNIX_EPOCH},
-};
-
 /// SigningKey implementation for YubiKey
 #[derive(Debug)]
 pub struct YubiKeySigningKey<'a, D>
@@ -193,7 +179,7 @@ where
         if SHA_256_WITH_RSA_ENCRYPTION == oid {
             let d = match OctetString::new(D::digest(msg).to_vec()) {
                 Ok(d) => d,
-                Err(_e) => panic!(),
+                Err(_e) => return Err(signature::Error::new()),
             };
             let ysd = DigestInfo {
                 digest_algorithm: AlgorithmIdentifierOwned {
@@ -205,7 +191,7 @@ where
 
             let em_len = match get_em_len(&self.spki) {
                 Ok(l) => l,
-                Err(_) => panic!(),
+                Err(_) => return Err(signature::Error::new()),
             };
 
             let alg = get_alg_id(&self.spki).unwrap();
@@ -220,13 +206,16 @@ where
             let yubikey_guard = if let Ok(g) = self.inner.lock() {
                 g
             } else {
-                panic!();
+                return Err(signature::Error::new());
             };
             let mut yubikey = yubikey_guard.deref().borrow_mut();
 
             let signature_buf = match sign_data(&mut yubikey, em.as_slice(), alg, self.slot) {
                 Ok(s) => s,
-                Err(_e) => panic!(),
+                Err(e) => {
+                    println!("{:?}", e);
+                    panic!()
+                }
             };
             Ok(Signature(signature_buf.to_vec()))
         } else {
@@ -234,12 +223,12 @@ where
             let yubikey_guard = if let Ok(g) = self.inner.lock() {
                 g
             } else {
-                panic!();
+                return Err(signature::Error::new());
             };
             let mut yubikey = yubikey_guard.deref().borrow_mut();
             let signature_buf = match sign_data(&mut yubikey, &D::digest(msg), alg, self.slot) {
                 Ok(s) => s,
-                Err(_e) => panic!(),
+                Err(_e) => return Err(signature::Error::new()),
             };
             Ok(Signature(signature_buf.to_vec()))
         }
