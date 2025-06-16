@@ -43,7 +43,7 @@ use crate::{
 };
 use log::{error, info};
 use pcsc::Card;
-use rand_core::{OsRng, RngCore};
+use rand_core::RngCore;
 use std::{
     cmp::{Ord, Ordering},
     fmt::{self, Display},
@@ -76,7 +76,7 @@ pub(crate) const KEY_CARDMGM: u8 = 0x9b;
 const TAG_DYN_AUTH: u8 = 0x7c;
 
 /// Cached YubiKey PIN.
-pub type CachedPin = secrecy::SecretVec<u8>;
+pub type CachedPin = secrecy::SecretSlice<u8>;
 
 /// YubiKey serial number.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -434,7 +434,8 @@ impl YubiKey {
         data[4..12].copy_from_slice(&response);
         data[12] = 0x81;
         data[13] = 8;
-        OsRng.fill_bytes(&mut data[14..22]);
+        let mut rng = rand::rng();
+        rng.fill_bytes(&mut data[14..22]);
 
         let mut challenge = [0u8; 8];
         challenge.copy_from_slice(&data[14..22]);
