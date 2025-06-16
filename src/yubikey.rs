@@ -322,7 +322,7 @@ impl YubiKey {
         let pin = self
             .pin
             .as_ref()
-            .map(|p| Buffer::new(p.expose_secret().clone()));
+            .map(|p| Buffer::new(p.expose_secret().to_vec()));
 
         let txn = Transaction::new(&mut self.card)?;
         txn.select_piv_application()?;
