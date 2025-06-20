@@ -60,4 +60,20 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [patch.crates-io]
-x509-cert = { git = "https://github.com/RustCrypto/formats.git" }
+primefield     = { git = "https://github.com/RustCrypto/elliptic-curves.git" }
+p256           = { git = "https://github.com/RustCrypto/elliptic-curves.git" }
+p384           = { git = "https://github.com/RustCrypto/elliptic-curves.git" }
+
+der            = { git = "https://github.com/RustCrypto/formats.git" }
+x509-cert      = { git = "https://github.com/RustCrypto/formats.git" }
+
+sha1             = { git = "https://github.com/RustCrypto/hashes.git" }
+sha2             = { git = "https://github.com/RustCrypto/hashes.git" }
+
+pbkdf2          = { git = "https://github.com/RustCrypto/password-hashes.git" }
+
+rsa             = { git = "https://github.com/RustCrypto/RSA.git" }
+
+ecdsa          = { git = "https://github.com/RustCrypto/signatures.git" }
+
+elliptic-curve = { git = "https://github.com/RustCrypto/traits.git" }
