@@ -241,10 +241,32 @@ impl MgmKey {
     ///
     /// TODO: Can we distinguish DES from AES-192? Or do we take `C` as a parameter and
     /// require the caller to know the type of the bytes they are parsing?
-    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Result<Self> {
-        MgmKey3Des::from_bytes(bytes)
-            .map(MgmKeyKind::Tdes)
-            .map(Self)
+    pub fn from_bytes(bytes: impl AsRef<[u8]>, alg: MgmAlgorithmId) -> Result<Self> {
+        // MgmKey3Des::from_bytes(bytes)
+        //     .map(MgmKeyKind::Tdes)
+        //     .map(Self)
+        match alg {
+            MgmAlgorithmId::ThreeDes => {
+                MgmKey3Des::from_bytes(bytes)
+                    .map(MgmKeyKind::Tdes)
+                    .map(Self)
+            }
+            MgmAlgorithmId::Aes128 => {
+                MgmKeyAes128::from_bytes(bytes)
+                    .map(MgmKeyKind::Aes128)
+                    .map(Self)
+            }
+            MgmAlgorithmId::Aes192 => {
+                MgmKeyAes192::from_bytes(bytes)
+                    .map(MgmKeyKind::Aes192)
+                    .map(Self)
+            }
+            MgmAlgorithmId::Aes256 => {
+                MgmKeyAes256::from_bytes(bytes)
+                    .map(MgmKeyKind::Aes256)
+                    .map(Self)
+            }
+        }
     }
 
     /// Gets the default management key for the given Yubikey's firmware version.
@@ -644,8 +666,13 @@ impl<C: MgmKeyAlgorithm> Drop for SpecificMgmKey<C> {
 impl<'a> TryFrom<&'a [u8]> for MgmKey {
     type Error = Error;
 
+    // todo - given TDES is deprecated does it matter to default to Aes192?
     fn try_from(key_bytes: &'a [u8]) -> Result<Self> {
-        Self::from_bytes(key_bytes)
+        match key_bytes.len() {
+            16 => Self::from_bytes(key_bytes, MgmAlgorithmId::Aes128),
+            32 => Self::from_bytes(key_bytes, MgmAlgorithmId::Aes256),
+            _ => Self::from_bytes(key_bytes, MgmAlgorithmId::Aes192)
+        }
     }
 }
 
