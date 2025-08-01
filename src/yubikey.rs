@@ -43,7 +43,7 @@ use crate::{
 };
 use log::{error, info};
 use pcsc::Card;
-use rand_core::{OsRng, RngCore};
+use rand_core::{OsRng, RngCore, TryRngCore};
 use std::{
     cmp::{Ord, Ordering},
     fmt::{self, Display},
@@ -443,7 +443,8 @@ impl YubiKey {
         data.push(challenge_len as u8);
 
         let mut host_challenge = vec![0u8; challenge_len];
-        OsRng.fill_bytes(&mut host_challenge);
+        let mut rng = OsRng.unwrap_err();
+        rng.fill_bytes(&mut host_challenge);
 
         data.extend_from_slice(&host_challenge);
 

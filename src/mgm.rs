@@ -35,8 +35,9 @@ use crate::{
     Error, Result,
 };
 use cipher::{typenum::Unsigned, BlockCipherDecrypt, BlockCipherEncrypt, Key, KeyInit};
+#[cfg(feature = "untested")]
 use log::error;
-use rand_core::CryptoRngCore;
+use rand_core::{CryptoRng, OsRng, TryRngCore};
 use zeroize::Zeroize;
 
 #[cfg(feature = "untested")]
@@ -164,7 +165,7 @@ impl MgmAlgorithmId {
 
 /// The algorithm used for the MGM key.
 pub trait MgmKeyAlgorithm:
-    BlockCipherDecrypt + BlockCipherEncrypt + Clone + KeyInit + private::Seal
+BlockCipherDecrypt + BlockCipherEncrypt + Clone + KeyInit + private::Seal
 {
     /// The algorithm ID used in APDU packets
     const ALGORITHM_ID: MgmAlgorithmId;
@@ -196,19 +197,24 @@ enum MgmKeyKind {
 
 impl MgmKey {
     /// Generates a random MGM key for the given algorithm.
-    pub fn generate<C: MgmKeyAlgorithm>(rng: &mut impl CryptoRngCore) -> Result<Self> {
+    pub fn generate<C: MgmKeyAlgorithm>() -> Self {
+        let mut rng = OsRng.unwrap_err();
+        Self::generate_from_rng::<C, _>(&mut rng)
+    }
+
+    /// Generates a random MGM key for the given algorithm.
+    pub fn generate_from_rng<C: MgmKeyAlgorithm, R: CryptoRng + ?Sized>(rng: &mut R) -> Self {
         match C::ALGORITHM_ID {
-            MgmAlgorithmId::ThreeDes => MgmKey3Des::generate(rng).map(MgmKeyKind::Tdes),
-            MgmAlgorithmId::Aes128 => MgmKeyAes128::generate(rng).map(MgmKeyKind::Aes128),
-            MgmAlgorithmId::Aes192 => MgmKeyAes192::generate(rng).map(MgmKeyKind::Aes192),
-            MgmAlgorithmId::Aes256 => MgmKeyAes256::generate(rng).map(MgmKeyKind::Aes256),
+            MgmAlgorithmId::ThreeDes => Self(MgmKeyKind::Tdes(MgmKey3Des::generate(rng))),
+            MgmAlgorithmId::Aes128 => Self(MgmKeyKind::Aes128(MgmKeyAes128::generate(rng))),
+            MgmAlgorithmId::Aes192 => Self(MgmKeyKind::Aes192(MgmKeyAes192::generate(rng))),
+            MgmAlgorithmId::Aes256 => Self(MgmKeyKind::Aes256(MgmKeyAes256::generate(rng))),
         }
-        .map(Self)
     }
 
     /// Generates a random MGM key using the preferred algorithm for the given Yubikey's
     /// firmware version.
-    pub fn generate_for(yubikey: &YubiKey, rng: &mut impl CryptoRngCore) -> Result<Self> {
+    pub fn generate_for<R: CryptoRng + ?Sized>(yubikey: &YubiKey, rng: &mut R) -> Result<Self> {
         match yubikey.version() {
             // Initial firmware versions default to 3DES.
             Version { major: ..=4, .. }
@@ -216,16 +222,17 @@ impl MgmKey {
                 major: 5,
                 minor: ..=6,
                 ..
-            } => MgmKey3Des::generate(rng).map(MgmKeyKind::Tdes),
+            } => Ok(Self(MgmKeyKind::Tdes(MgmKey3Des::generate(rng)))),
             // Firmware 5.7.0 and above default to AES-192.
             Version {
                 major: 5,
                 minor: 7..,
                 ..
             }
-            | Version { major: 6.., .. } => MgmKeyAes192::generate(rng).map(MgmKeyKind::Aes192),
+            | Version { major: 6.., .. } => {
+                Ok(Self(MgmKeyKind::Aes192(MgmKeyAes192::generate(rng))))
+            }
         }
-        .map(Self)
     }
 
     /// Parses an MGM key from the given byte slice.
@@ -318,12 +325,9 @@ pub struct SpecificMgmKey<C: MgmKeyAlgorithm>(Key<C>);
 
 impl<C: MgmKeyAlgorithm> SpecificMgmKey<C> {
     /// Generates a random MGM key for this algorithm.
-    pub fn generate(rng: &mut impl CryptoRngCore) -> Result<Self> {
-        let key = C::generate_key_with_rng(rng).map_err(|e| {
-            error!("RNG failure: {}", e);
-            Error::KeyError
-        })?;
-        Ok(Self(key))
+    pub fn generate<R: CryptoRng + ?Sized>(rng: &mut R) -> Self {
+        let key = C::generate_key_with_rng(rng);
+        Self(key)
     }
 
     /// Parses an MGM key from the given byte slice.
@@ -588,7 +592,7 @@ impl private::MgmKeyOpsInternal for MgmKey {
             MgmAlgorithmId::Aes192 => MgmKeyAes192::from_bytes(bytes).map(MgmKeyKind::Aes192),
             MgmAlgorithmId::Aes256 => MgmKeyAes256::from_bytes(bytes).map(MgmKeyKind::Aes256),
         }
-        .map(Self)
+            .map(Self)
     }
 
     fn encrypt_block(&self, block: &mut [u8]) -> Result<()> {
@@ -1070,8 +1074,8 @@ impl DeviceInfo {
                 err => err,
             },
         )(rest)
-        .map_err(|_: nom::Err<()>| Error::ParseError)?
-        .1?;
+            .map_err(|_: nom::Err<()>| Error::ParseError)?
+            .1?;
 
         let Some(usb_enabled_apps) = out.usb_enabled_apps else {
             return Err(Error::ParseError);
