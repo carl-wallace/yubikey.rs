@@ -87,7 +87,7 @@ const TAG_RSA_EXP: u8 = 0x82;
 const TAG_ECC_POINT: u8 = 0x86;
 
 #[cfg(feature = "untested")]
-const KEYDATA_LEN: usize = 1024;
+const KEYDATA_LEN: usize = 2048;
 
 #[cfg(feature = "untested")]
 const KEYDATA_RSA_EXP: u64 = 65537;
