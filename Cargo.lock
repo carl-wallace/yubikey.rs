@@ -230,8 +230,9 @@ dependencies = [
 
 [[package]]
 name = "der"
-version = "0.8.0-rc.7"
-source = "git+https://github.com/RustCrypto/formats.git#957490549db8990637236e53f540a38d15263167"
+version = "0.8.0-rc.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7050e8041c28720851f7db83183195b6acf375bb7bb28e3b86f0fe6cbd69459d"
 dependencies = [
  "const-oid",
  "der_derive",
@@ -242,8 +243,9 @@ dependencies = [
 
 [[package]]
 name = "der_derive"
-version = "0.8.0-rc.3"
-source = "git+https://github.com/RustCrypto/formats.git#957490549db8990637236e53f540a38d15263167"
+version = "0.8.0-rc.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14bfffadecb79dfde429f5dcd7553780c2cea5f7d0e72ad7c37a74f1ef79230a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1286,3 +1288,13 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[patch.unused]]
+name = "der"
+version = "0.8.0-rc.7"
+source = "git+https://github.com/RustCrypto/formats.git#957490549db8990637236e53f540a38d15263167"
+
+[[patch.unused]]
+name = "der_derive"
+version = "0.8.0-rc.3"
+source = "git+https://github.com/RustCrypto/formats.git#957490549db8990637236e53f540a38d15263167"
