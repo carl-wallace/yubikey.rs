@@ -5,6 +5,7 @@ use crate::{
     apdu::{Apdu, Ins, StatusWords},
     consts::{CB_BUF_MAX, CB_OBJ_MAX},
     error::{Error, Result},
+    mgm::MgmKey,
     otp,
     piv::{self, AlgorithmId, SlotId},
     serialization::*,
@@ -15,7 +16,7 @@ use log::{error, trace};
 use zeroize::Zeroizing;
 
 #[cfg(feature = "untested")]
-use crate::mgm::{DeviceConfig, DeviceInfo, Lock, MgmKeyOps};
+use crate::mgm::{DeviceConfig, DeviceInfo, Lock};
 
 const CB_PIN_MAX: usize = 8;
 
@@ -163,17 +164,16 @@ impl<'tx> Transaction<'tx> {
             .p2(slot.into())
             .transmit(self, CB_OBJ_MAX)?;
 
-        if !response.is_success() {
-            if response.status_words() == StatusWords::NotSupportedError {
-                return Err(Error::NotSupported); // Requires firmware 5.2.3
-            } else {
-                return Err(Error::GenericError);
+        match response.status_words() {
+            StatusWords::Success => {
+                let buf = Buffer::new(response.data().into());
+                piv::SlotMetadata::try_from(buf)
             }
+            StatusWords::ReferenceDataNotFoundError => Err(Error::NotFound),
+            // Requires firmware 5.2.3
+            StatusWords::NotSupportedError => Err(Error::NotSupported),
+            _ => Err(Error::GenericError),
         }
-
-        let buf = Buffer::new(response.data().into());
-
-        piv::SlotMetadata::try_from(buf)
     }
 
     /// Verify device PIN.
@@ -248,8 +248,7 @@ impl<'tx> Transaction<'tx> {
     }
 
     /// Set the management key (MGM).
-    #[cfg(feature = "untested")]
-    pub fn set_mgm_key<K: MgmKeyOps>(&self, new_key: &K, require_touch: bool) -> Result<()> {
+    pub fn set_mgm_key(&self, new_key: &MgmKey, require_touch: bool) -> Result<()> {
         let p2 = if require_touch { 0xfe } else { 0xff };
 
         let mut data = Vec::with_capacity(usize::from(new_key.key_size()) + 3);
