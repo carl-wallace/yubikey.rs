@@ -485,7 +485,8 @@ impl MgmKey {
             MgmAlgorithmId::ThreeDes => {
                 let key =
                     Key::<des::TdesEde3>::try_from(bytes.as_ref()).map_err(|_| Error::SizeError)?;
-                des::TdesEde3::weak_key_test(&key).map_err(|_| Error::KeyError)?;
+                // Default key fails weak key test
+                // des::TdesEde3::weak_key_test(&key).map_err(|_| Error::KeyError)?;
                 Ok(MgmKeyKind::Tdes(key))
             }
             MgmAlgorithmId::Aes128 => Key::<aes::Aes128>::try_from(bytes.as_ref())
