@@ -39,7 +39,8 @@ use crate::{
 };
 use bitflags::bitflags;
 use cipher::{
-    typenum::Unsigned, BlockCipherDecrypt, BlockCipherEncrypt, Key, KeyInit, KeySizeUser,
+    crypto_common::Generate, typenum::Unsigned, BlockCipherDecrypt, BlockCipherEncrypt, Key,
+    KeyInit, KeySizeUser,
 };
 use log::error;
 use rand::TryCryptoRng;
@@ -141,6 +142,26 @@ impl From<MgmAlgorithmId> for u8 {
 }
 
 impl MgmAlgorithmId {
+    /// Get the default MGM key algorithm for the given YubiKey version.
+    fn default_for_version(version: Version) -> Self {
+        match version {
+            // Initial firmware versions default to 3DES.
+            Version { major: ..=4, .. }
+            | Version {
+                major: 5,
+                minor: ..=6,
+                ..
+            } => Self::ThreeDes,
+            // Firmware 5.7.0 and above default to AES-192.
+            Version {
+                major: 5,
+                minor: 7..,
+                ..
+            }
+            | Version { major: 6.., .. } => Self::Aes192,
+        }
+    }
+
     /// Looks up the algorithm for the given Yubikey's current management key.
     fn query(txn: &Transaction<'_>) -> Result<Self> {
         match txn.get_metadata(crate::piv::SlotId::Management(ManagementSlotId::Management)) {
@@ -179,47 +200,33 @@ enum MgmKeyKind {
 
 impl MgmKey {
     /// Generates a random MGM key for the given algorithm.
-    pub fn generate(alg: MgmAlgorithmId, rng: &mut impl TryCryptoRng) -> Result<Self> {
+    pub fn generate<R: TryCryptoRng + ?Sized>(alg: MgmAlgorithmId, rng: &mut R) -> Result<Self> {
         match alg {
             MgmAlgorithmId::ThreeDes => {
-                des::TdesEde3::try_generate_key_with_rng(rng).map(MgmKeyKind::Tdes)
+                Key::<des::TdesEde3>::try_generate_from_rng(rng).map(MgmKeyKind::Tdes)
             }
             MgmAlgorithmId::Aes128 => {
-                aes::Aes128::try_generate_key_with_rng(rng).map(MgmKeyKind::Aes128)
+                Key::<aes::Aes128>::try_generate_from_rng(rng).map(MgmKeyKind::Aes128)
             }
             MgmAlgorithmId::Aes192 => {
-                aes::Aes192::try_generate_key_with_rng(rng).map(MgmKeyKind::Aes192)
+                Key::<aes::Aes192>::try_generate_from_rng(rng).map(MgmKeyKind::Aes192)
             }
             MgmAlgorithmId::Aes256 => {
-                aes::Aes256::try_generate_key_with_rng(rng).map(MgmKeyKind::Aes256)
+                Key::<aes::Aes256>::try_generate_from_rng(rng).map(MgmKeyKind::Aes256)
             }
         }
-        .map_err(|e| {
-            error!("RNG failure: {}", e);
-            Error::KeyError
-        })
-        .map(Self)
+            .map_err(|e| {
+                error!("RNG failure: {}", e);
+                Error::KeyError
+            })
+            .map(Self)
     }
 
     /// Generates a random MGM key using the preferred algorithm for the given Yubikey's
     /// firmware version.
-    pub fn generate_for(yubikey: &YubiKey, rng: &mut impl TryCryptoRng) -> Result<Self> {
-        match yubikey.version() {
-            // Initial firmware versions default to 3DES.
-            Version { major: ..=4, .. }
-            | Version {
-                major: 5,
-                minor: ..=6,
-                ..
-            } => Self::generate(MgmAlgorithmId::ThreeDes, rng),
-            // Firmware 5.7.0 and above default to AES-192.
-            Version {
-                major: 5,
-                minor: 7..,
-                ..
-            }
-            | Version { major: 6.., .. } => Self::generate(MgmAlgorithmId::Aes192, rng),
-        }
+    pub fn generate_for<R: TryCryptoRng + ?Sized>(yubikey: &YubiKey, rng: &mut R) -> Result<Self> {
+        let alg = MgmAlgorithmId::default_for_version(yubikey.version());
+        Self::generate(alg, rng)
     }
 
     /// Parses an MGM key from the given byte slice.
@@ -242,21 +249,10 @@ impl MgmKey {
     ///
     /// Returns an error if the Yubikey's default algorithm is unsupported.
     pub fn get_default(yubikey: &YubiKey) -> Result<Self> {
-        match yubikey.version() {
-            // Initial firmware versions default to 3DES.
-            Version { major: ..=4, .. }
-            | Version {
-                major: 5,
-                minor: ..=6,
-                ..
-            } => Ok(Self(MgmKeyKind::Tdes(DEFAULT_MGM_KEY.into()))),
-            // Firmware 5.7.0 and above default to AES-192.
-            Version {
-                major: 5,
-                minor: 7..,
-                ..
-            }
-            | Version { major: 6.., .. } => Ok(Self(MgmKeyKind::Aes192(DEFAULT_MGM_KEY.into()))),
+        match MgmAlgorithmId::default_for_version(yubikey.version()) {
+            MgmAlgorithmId::ThreeDes => Ok(Self(MgmKeyKind::Tdes(DEFAULT_MGM_KEY.into()))),
+            MgmAlgorithmId::Aes192 => Ok(Self(MgmKeyKind::Aes192(DEFAULT_MGM_KEY.into()))),
+            _ => Err(Error::NotSupported),
         }
     }
 
@@ -485,8 +481,7 @@ impl MgmKey {
             MgmAlgorithmId::ThreeDes => {
                 let key =
                     Key::<des::TdesEde3>::try_from(bytes.as_ref()).map_err(|_| Error::SizeError)?;
-                // Default key fails weak key test
-                // des::TdesEde3::weak_key_test(&key).map_err(|_| Error::KeyError)?;
+                des::TdesEde3::weak_key_test(&key).map_err(|_| Error::KeyError)?;
                 Ok(MgmKeyKind::Tdes(key))
             }
             MgmAlgorithmId::Aes128 => Key::<aes::Aes128>::try_from(bytes.as_ref())
@@ -499,7 +494,7 @@ impl MgmKey {
                 .map_err(|_| Error::SizeError)
                 .map(MgmKeyKind::Aes256),
         }
-        .map(Self)
+            .map(Self)
     }
 
     /// Encrypts a block with this key.
@@ -943,9 +938,9 @@ impl DeviceInfo {
                 err => err,
             },
         )
-        .parse(rest)
-        .map_err(|_: nom::Err<()>| Error::ParseError)?
-        .1?;
+            .parse(rest)
+            .map_err(|_: nom::Err<()>| Error::ParseError)?
+            .1?;
 
         let Some(usb_enabled_apps) = out.usb_enabled_apps else {
             return Err(Error::ParseError);
