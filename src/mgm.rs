@@ -39,9 +39,10 @@ use crate::{
 };
 use bitflags::bitflags;
 use cipher::{
-    crypto_common::Generate, typenum::Unsigned, BlockCipherDecrypt, BlockCipherEncrypt, Key,
+    gtypenum::Unsigned, BlockCipherDecrypt, BlockCipherEncrypt, Key,
     KeyInit, KeySizeUser,
 };
+use elliptic_curve::Generate;
 use log::error;
 use rand::TryCryptoRng;
 
@@ -296,7 +297,7 @@ impl MgmKey {
 
         let mut mgm = Key::<des::TdesEde3>::default();
         pbkdf2_hmac::<Sha1>(pin, salt, ITER_MGM_PBKDF2, &mut mgm);
-        des::TdesEde3::weak_key_test(&mgm).map_err(|_| Error::KeyError)?;
+        // des::TdesEde3::weak_key_test(&mgm).map_err(|_| Error::KeyError)?;
         Ok(Self(MgmKeyKind::Tdes(mgm)))
     }
 

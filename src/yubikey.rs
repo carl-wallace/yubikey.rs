@@ -43,7 +43,7 @@ use crate::{
 };
 use log::{error, info};
 use pcsc::Card;
-use rand_core::RngCore;
+use rand_core::Rng;
 use std::{
     cmp::{Ord, Ordering},
     fmt::{self, Display},
