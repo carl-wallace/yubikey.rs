@@ -39,7 +39,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use cipher::{
-    gtypenum::Unsigned, BlockCipherDecrypt, BlockCipherEncrypt, Key,
+    typenum::Unsigned, BlockCipherDecrypt, BlockCipherEncrypt, Key,
     KeyInit, KeySizeUser,
 };
 use elliptic_curve::Generate;
